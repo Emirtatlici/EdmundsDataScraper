@@ -7,3 +7,5 @@ Data Scraping Library for Edmunds.com (Used Car Website) and Data Analysis
 
 
 * Then I applied EDA and Statistical Analysis for this dataset.
+
+* With the help of scraper you can scraper 56 pages per minute since there are 21 car data for every page you basically get 1176 data for each minute of scraping.
