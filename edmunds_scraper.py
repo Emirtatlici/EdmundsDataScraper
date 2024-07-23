@@ -25,7 +25,7 @@ class EdmundsDataScraper:
         self.all_data = []
         self.state = "CA"
         self.zip_code = "90001"
-
+#
     def scrape_data(self):
         for make in self.makes:
             for page_num in range(1, self.page_number):
