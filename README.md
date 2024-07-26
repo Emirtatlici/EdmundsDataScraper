@@ -11,3 +11,5 @@ Data Scraping Library for Edmunds.com (Used Car Website) and Data Analysis
 * With the help of scraper you can scraper 56 pages per minute since there are 21 car data for every page you basically get 1176 data for each minute of scraping.
 
 * With the latest update you can add your scraped data to a database by using send_to_database function
+
+* I added an extra data cleaning function which applies more data cleaning
