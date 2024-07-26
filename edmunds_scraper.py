@@ -2,7 +2,7 @@ import requests
 import json
 import pandas as pd
 import numpy as np
-import warnings 
+import warnings
 warnings.filterwarnings("ignore")
 import sqlite3
 from datetime import datetime
@@ -32,7 +32,7 @@ class EdmundsDataScraper:
 
     def scrape_data(self):
         for make in self.makes:
-            for page_num in range(1, self.page_number+1):
+            for page_num in range(1, self.page_number + 1):
                 querystring = {
                     "dma": "543", "inventoryType": "used,cpo",
                     "lat": "42.435682", "lon": "-72.648379",
@@ -56,10 +56,10 @@ class EdmundsDataScraper:
 
     def clean_data(self, raw_data):
         """
-        Ham veriyi temizler ve işler.
+        It cleans the raw data into a excel format.
         
-        :param raw_data: Temizlenecek ham veri (liste formatında)
-        :return: Temizlenmiş pandas DataFrame
+        :param raw_data: Data to be cleaned
+        :return: Cleaned pandas DataFrame of the data
         """
         columns = [
             "vid", "vin", "stockNumber", "type", "sellersComments",
@@ -90,77 +90,71 @@ class EdmundsDataScraper:
                         if isinstance(value, dict):
                             value = value.get(key, {})
                         else:
+                            value = None
                             break
                     data_dict[column] = value
                 data_list.append(data_dict)
 
         df = pd.DataFrame(data_list)
+        df=df.drop(columns=["vid","vin"])
 
-        # İkinci temizleme fonksiyonundan alınan işlemler
-        columns_to_drop = ["vid", "vin", "listingUrl", "dealerInfo.address.street",
+        return df
+
+    def process_column(self, df, column, group_cols):
+        if column not in df.columns:
+            return df
+
+        df[column] = df[column].astype(str).replace("{}", np.NaN)
+        is_numeric = pd.api.types.is_numeric_dtype(df[column])
+
+        if is_numeric:
+            df[column] = df.groupby(group_cols)[column].transform(
+                lambda x: x.fillna(x.median())
+            )
+            df[column] = df[column].fillna(df[column].median())
+        else:
+            df[column] = df.groupby(group_cols)[column].transform(
+                lambda x: x.fillna(x.mode().iloc[0] if not x.mode().empty else np.NaN)
+            )
+            overall_mode = df[column].mode().iloc[0] if not df[column].mode().empty else "Unknown"
+            df[column] = df[column].fillna(overall_mode)
+
+        return df
+
+    def process_data(self, df):
+        columns_to_drop = ["listingUrl", "dealerInfo.address.street",
                            "dealerInfo.productFeatures.verified", "dealerInfo.address.stateName",
                            "stockNumber", "inTransit", "vehicleInfo.styleInfo.fuel.epaCombinedMPG",
                            "vehicleInfo.styleInfo.fuel.epaCityMPG", "vehicleInfo.styleInfo.fuel.epaHighwayMPG", "historyInfo.personalUseOnly"]
 
         replace_dict = {
-            "prices.displayPrice": np.nan,
-            "vehicleInfo.vehicleColors.exterior.genericName": np.nan,
-            "vehicleInfo.vehicleColors.interior.genericName": np.nan,
+            "prices.displayPrice": np.NaN,
+            "vehicleInfo.vehicleColors.exterior.genericName": np.NaN,
+            "vehicleInfo.vehicleColors.interior.genericName": np.NaN,
             "historyInfo.historyProvider": "USER",
-            "vehicleInfo.mileage": np.nan,
+            "vehicleInfo.mileage": np.NaN,
             "historyInfo.usageType": "Unknown_Usage_Type",
-            "prices.baseMsrp": np.nan,
-            "prices.totalMsrp": np.nan,
-            "prices.loan.payment": np.nan,
+            "prices.baseMsrp": np.NaN,
+            "prices.totalMsrp": np.NaN,
+            "prices.loan.payment": np.NaN,
             "historyInfo.ownerText": "Unknown",
-            "sellersComments": np.nan
+            "sellersComments": np.NaN
         }
 
         for col, value in replace_dict.items():
             if col in df.columns:
-                df[col] = df[col].replace("{}", value)
-
-        if all(col in df.columns for col in ["vehicleInfo.partsInfo.engineSize", "vehicleInfo.partsInfo.fuelType", "vehicleInfo.styleInfo.style"]):
-            df.loc[df["vehicleInfo.partsInfo.engineSize"].str.contains(r"\{\}") & 
-                (df["vehicleInfo.partsInfo.fuelType"] == "{}") & 
-                df["vehicleInfo.styleInfo.style"].str.contains(r'\d+cyl'), 
-                "vehicleInfo.partsInfo.engineType"] = "gas"
+                df[col] = df[col].astype(str).replace("{}", value)
 
         float_columns = ["prices.displayPrice", "vehicleInfo.mileage", "prices.totalMsrp", "prices.baseMsrp", "prices.loan.payment"]
         for col in float_columns:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        df = df.drop(columns=[col for col in columns_to_drop if col in df.columns])
-        
-        if "prices.displayPrice" in df.columns and "vehicleInfo.mileage" in df.columns:
-            df = df[~df["prices.displayPrice"].isna()]
-            df = df[~df["vehicleInfo.mileage"].isna()]
-
-        def process_column(df, column, group_cols):
-            if column not in df.columns:
-                return df
-            
-            df[column] = df[column].replace("{}", np.nan)
-            
-            is_numeric = pd.api.types.is_numeric_dtype(df[column])
-            
-            if is_numeric:
-                df[column] = df.groupby(group_cols)[column].transform(
-                    lambda x: x.fillna(x.median())
-                )
-                df[column] = df[column].fillna(df[column].median())
-            else:
-                df[column] = df.groupby(group_cols)[column].transform(
-                    lambda x: x.fillna(x.mode().iloc[0] if not x.mode().empty else np.nan)
-                )
-                overall_mode = df[column].mode().iloc[0] if not df[column].mode().empty else "Unknown"
-                df[column] = df[column].fillna(overall_mode)
-            
-            return df
+        df = df.drop(columns=columns_to_drop)
+        df = df[~df["prices.displayPrice"].isna()]
+        df = df[~df["vehicleInfo.mileage"].isna()]
 
         group_cols = ['vehicleInfo.styleInfo.make', 'vehicleInfo.styleInfo.model', 'vehicleInfo.styleInfo.year']
-
         columns_to_process = [
             'vehicleInfo.vehicleColors.exterior.genericName', 'vehicleInfo.vehicleColors.interior.genericName',
             'vehicleInfo.partsInfo.driveTrain', 'vehicleInfo.partsInfo.cylinders', 'vehicleInfo.partsInfo.engineSize',
@@ -174,19 +168,14 @@ class EdmundsDataScraper:
         ]
 
         for column in columns_to_process:
-            df = process_column(df, column, group_cols)
+            df = self.process_column(df, column, group_cols)
             if column in df.columns:
                 print(f"Processed {column}. NaN count: {df[column].isna().sum()}")
 
         print("Processing complete.")
+        df=df.replace(["NaN", "null", "None", "nan"], np.nan)
         return df
-
-    def scrape_and_clean(self):
-        raw_data = self.scrape_data()
-        return self.clean_data(raw_data)
-
-
-
+    
     def send_to_database(self, df, db_path="edmunds_database.db", if_exists='replace'):
     
         def preprocess_for_sqlite(df):
